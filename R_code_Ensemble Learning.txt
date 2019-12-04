@@ -1,0 +1,216 @@
+#-----Section 01-------------------------------------------
+# Data Exploration 
+
+# load the credit dataset
+BankMarketing <- read.csv("")
+
+str(BankMarketing)
+
+boxplot(BankMarketing)
+
+
+# table or proportions with more informative labels
+round(prop.table(table(BankMarketing$deposit)) * 100, digits = 1)
+
+
+### use sample of 12000 in the analyse 
+BankMarketing_train <- BankMarketing_rand[1:12000, ]
+BankMarketing_test  <- BankMarketing_rand[12001:12500, ]
+
+
+
+prop.table(table(as.data.frame(BankMarketing_train)$deposit))   
+prop.table(table(as.data.frame(BankMarketing_test)$deposit))
+
+-------------------#Section 02-------------------------------
+# Data pre-processing
+
+# Ensemble learning - Bagging , Boosting and Random forest
+
+
+#-----Section 03-------------------------------------------
+# create a random sample for training and test data
+# set seed 
+
+set.seed(12345)
+
+# Randomise the dataset
+
+BankMarketing_rand <- BankMarketing[order(runif(45211)), ]
+
+
+
+#-----Section 04-------------------------------------------
+
+
+# create train and test data
+
+BankMarketing_train <- BankMarketing_rand[1:36169, ]
+BankMarketing_test  <- BankMarketing_rand[36170:45211, ]
+
+#-----Section 05-------------------------------------------
+# create a simple tuned model
+# automated parameter tuning of C5.0 decision tree 
+
+library(caret)
+library(C50)
+library(gmodels)
+library(plyr)
+
+set.seed(12345)
+BankMarketing.C5 <- train(BankMarketing_train$deposit ~ ., data = BankMarketing_train[-17], method = "C5.0")
+
+
+# summary of tuning results
+BankMarketing.C5
+
+# apply the best C5.0 candidate model to make predictions
+BankMarketing.pred <- predict(BankMarketing.C5, BankMarketing_test)
+
+table(BankMarketing.pred, BankMarketing_test$deposit)
+
+CrossTable(BankMarketing_test$deposit, BankMarketing.pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual default', 'predicted default'))
+
+confusionMatrix(BankMarketing.pred, BankMarketing_test$deposit, positive = "yes")
+
+# obtain predicted probabilities
+head(predict(BankMarketing.C5, BankMarketing_test, type = "prob"))
+
+#-----Section 06-------------------------------------------
+
+# customizing the tuning process
+
+# use trainControl() to alter resampling strategy
+ctrl <- trainControl(method = "cv", number = 10,
+                     selectionFunction = "oneSE")
+
+# use expand.grid() to create grid of tuning parameters
+grid <- expand.grid(.model = "tree",
+                    .trials = c(1, 5, 10, 15, 20, 25, 30, 35),
+                    .winnow = "FALSE")
+
+# look at the result of expand.grid()
+grid
+
+# customize train() with the control list and grid of parameters 
+set.seed(12345)
+
+BankMarketing.C5 <- train(BankMarketing_train$deposit ~ ., data = BankMarketing_train, method = "C5.0",
+                   metric = "Kappa", trControl = ctrl, tuneGrid = grid)
+
+
+
+BankMarketing.C5
+
+# apply the best C5.0 candidate model to make predictions
+BankMarketing.pred <- predict(BankMarketing.C5, BankMarketing_test)
+
+
+table(BankMarketing.pred, BankMarketing_test$deposit)
+
+CrossTable(BankMarketing_test$deposit, BankMarketing.pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual default', 'predicted default'))
+
+confusionMatrix(BankMarketing.pred, BankMarketing_test$deposit, positive = "yes")
+
+# obtain predicted probabilities
+head(predict(BankMarketing.C5, BankMarketing_test, type = "prob"))
+
+#-----Section 07-------------------------------------------
+# bagging Using the ipred bagged decision trees
+
+library(ipred)
+
+set.seed(12345)
+BankMarketing.bag <- bagging(BankMarketing_train$deposit ~ ., data = BankMarketing_train[-17], nbagg = 25)
+
+BankMarketing.pred <- predict(BankMarketing.bag, BankMarketing_test)
+
+table(BankMarketing.pred, BankMarketing_test$deposit)
+
+
+# inspect performance of ipred bagged trees
+
+CrossTable(BankMarketing_test$deposit, BankMarketing.pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual default', 'predicted default'))
+
+confusionMatrix(BankMarketing.pred, BankMarketing_test$deposit, positive = "yes")
+
+
+
+# further training of parameters in ipred bagged trees
+
+set.seed(12345)
+ctrl <- trainControl(method = "cv", number = 10)
+BankMarketing.bag2 <- train(BankMarketing_train$deposit ~ ., data = BankMarketing_train[-17], method = "treebag", trControl = ctrl)
+BankMarketing.pred2 <- predict(BankMarketing.bag2, BankMarketing_test)
+
+table(BankMarketing.pred2, BankMarketing_test$deposit)
+
+# inspect performance of ipred bagged trees
+
+CrossTable(BankMarketing_test$deposit, BankMarketing.pred2,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual default', 'predicted default'))
+
+confusionMatrix(BankMarketing.pred2, BankMarketing_test$deposit, positive = "yes")
+
+
+#-----Section 08-------------------------------------------
+# Random Forests
+
+# random forest with default settings
+library(randomForest)
+
+set.seed(12345)
+BankMarketing.rf <- randomForest(BankMarketing_train$deposit ~ ., data = BankMarketing_train[-17])
+BankMarketing.pred.rf <- predict(BankMarketing.rf, BankMarketing_test)
+
+
+table(BankMarketing.pred.rf, BankMarketing_test$deposit)
+
+# inspect performance of randon forest
+CrossTable(BankMarketing_test$deposit, BankMarketing.pred.rf,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual default', 'predicted default'))
+
+
+confusionMatrix(BankMarketing.pred.rf, BankMarketing_test$deposit, positive = "yes")
+
+#-----Section 09-------------------------------------------
+# auto-tune a random forest
+library(caret)
+
+#set up the control
+ctrl <- trainControl(method = "repeatedcv",number = 10, repeats = 10)
+
+# set uo the grid
+grid_rf <- expand.grid(.mtry = c(2, 4, 8, 16))
+
+set.seed(12345)
+BankMarketing.rf2 <- train(BankMarketing_train$deposit ~ ., data = BankMarketing_train[-17], method = "rf",
+                    metric = "Kappa", trControl = ctrl, tuneGrid = grid_rf)
+
+
+
+BankMarketing.pred <- predict(BankMarketing.rf2, BankMarketing_test)
+
+table(BankMarketing.pred, BankMarketing_test$deposit)
+
+# inspect performance of random forest
+CrossTable(BankMarketing_test$deposit, BankMarketing.pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual default', 'predicted default'))
+
+confusionMatrix(BankMarketing.pred, BankMarketing_test$deposit, positive = "yes")
+
+#-----Section 09-------------------------------------------
+
+# remove all variables from the environment
+rm(list=ls())
+
+
